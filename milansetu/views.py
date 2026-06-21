@@ -63,9 +63,9 @@ class SignupView(APIView):
 
 class MyProfileView(APIView):
     """
-    GET   /api/milansetu/profile/me/  — Retrieve the current user's profile.
-    PATCH /api/milansetu/profile/me/  — Partially update the current user's profile.
-    PUT   /api/milansetu/profile/me/  — Fully replace the current user's profile.
+    GET   /api/milansetu/profile/fetch_detail/  — Retrieve the current user's profile.
+    PATCH /api/milansetu/profile/fetch_detail/  — Partially update the current user's profile.
+    PUT   /api/milansetu/profile/fetch_detail/  — Fully replace the current user's profile.
 
     Requires:
         Authorization: Bearer <access token>
@@ -89,7 +89,7 @@ class MyProfileView(APIView):
         profile = self._get_or_none(request.user)
         if profile is None:
             return Response(
-                {"detail": "Profile not found. Use PATCH /profile/me/ to create one."},
+                {"detail": "Profile not found. Use PATCH /profile/fetch_detail/ to create one."},
                 status=status.HTTP_404_NOT_FOUND,
             )
         serializer = ProfileDetailsSerializer(profile)

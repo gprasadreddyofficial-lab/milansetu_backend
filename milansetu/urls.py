@@ -19,7 +19,7 @@ urlpatterns = [
     # GET   — fetch my profile
     # PATCH — edit my profile (partial, recommended)
     # PUT   — replace my profile (full)
-    path("profile/me/", MyProfileView.as_view(), name="my-profile"),
+    path("profile/fetch_detail/", MyProfileView.as_view(), name="my-profile"),
 
     # ── Admin: all profiles ───────────────────────────────────────────────────
     # GET  — list all profiles
