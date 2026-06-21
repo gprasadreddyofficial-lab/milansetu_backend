@@ -129,7 +129,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
-    'https://gprasadreddyofficial-lab.github.io',  # ← add this
+    'https://gprasadreddyofficial-lab.github.io',
 ]
 CORS_ALLOW_CREDENTIALS = True   # needed so the browser sends the CSRF cookie
 
@@ -139,7 +139,8 @@ CORS_ALLOW_CREDENTIALS = True   # needed so the browser sends the CSRF cookie
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
-    'https://gprasadreddyofficial-lab.github.io',  # ← add this
+    'https://gprasadreddyofficial-lab.github.io',
+    'https://milansetu-backend.onrender.com',
 ]
 # Cookie is readable by JS so the frontend can attach it as a header
 CSRF_COOKIE_HTTPONLY = False
