@@ -83,8 +83,7 @@ class SignupSerializer(serializers.Serializer):
                 password=user_data["password"],
                 phone=user_data.get("phone"),
             )
-            # Write profile data into the existing profile_details table
-            if profile_data:
-                ProfileDetails.objects.create(**profile_data)
+            # Always create a profile record linked to the user
+            ProfileDetails.objects.create(user=user, **profile_data)
 
         return user

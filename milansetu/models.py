@@ -1,9 +1,20 @@
+from django.conf import settings
 from django.db import models
 
-# Create your models here.
 
 class ProfileDetails(models.Model):
-    id = models.BigAutoField(primary_key=True)
+    """
+    One-to-one profile record linked to a User.
+    All fields are optional so users can fill in details progressively.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="profile",
+        null=True,
+        blank=True,
+    )
     full_name = models.CharField(max_length=255, blank=True, null=True)
     age = models.IntegerField(blank=True, null=True)
     height_cm = models.IntegerField(blank=True, null=True)
@@ -28,9 +39,11 @@ class ProfileDetails(models.Model):
     zodiac_sign = models.CharField(max_length=100, blank=True, null=True)
     manglik_status = models.CharField(max_length=50, blank=True, null=True)
     kundali_url = models.CharField(max_length=500, blank=True, null=True)
-    created_at = models.DateTimeField(blank=True, null=True)
-    updated_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        managed = False
-        db_table = 'profile_details'
+        db_table = "profile_details"
+
+    def __str__(self):
+        return self.full_name or f"Profile #{self.pk}"
