@@ -16,7 +16,7 @@ load_dotenv(BASE_DIR / '.env')
 
 SECRET_KEY = os.environ.get('SECRET_KEY')
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', '').split(',') if h.strip()]
 
 # ─── Custom user model ────────────────────────────────────────────────────────
 AUTH_USER_MODEL = 'users.User'
@@ -153,6 +153,10 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    # Return 401 responses instead of raising exceptions for invalid tokens
+    # on endpoints that use IsAuthenticated — never throw on public endpoints
+    # since those now have authentication_classes = []
+    'UNAUTHENTICATED_USER': None,
 }
 
 
@@ -162,6 +166,9 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,   # invalidate old refresh tokens after rotation
+    'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
+    # Use a dedicated signing key so JWT verification never depends on
+    # how python-dotenv parses special characters in SECRET_KEY
+    'SIGNING_KEY': os.environ.get('JWT_SIGNING_KEY', os.environ.get('SECRET_KEY')),
 }

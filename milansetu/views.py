@@ -20,21 +20,11 @@ class SignupView(APIView):
     GET  /api/milansetu/signup/  — Returns a CSRF token for the client.
     POST /api/milansetu/signup/  — Registers a new user + optional profile
                                    and returns JWT access & refresh tokens.
-
-    Request body (POST):
-        {
-            "email": "user@example.com",
-            "password": "secret123",
-            "confirm_password": "secret123",
-            "phone": "+919876543210",       // optional
-            "full_name": "Ravi Kumar",      // optional profile fields
-            ...
-        }
-
-    Response 201:
-        { "id": 1, "email": "...", "access": "...", "refresh": "..." }
     """
 
+    # No authentication — public endpoint.
+    # Prevents JWTAuthentication from rejecting requests with stale tokens.
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def get(self, request):

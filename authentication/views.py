@@ -15,31 +15,26 @@ class SignInView(APIView):
     Authenticates a user with email + password and returns a JWT token pair.
 
     Request body:
-        {
-            "email": "user@example.com",
-            "password": "secret123"
-        }
+        { "email": "user@example.com", "password": "secret123" }
 
     Response 200:
-        {
-            "id": 1,
-            "email": "user@example.com",
-            "access": "<JWT access token>",
-            "refresh": "<JWT refresh token>"
-        }
+        { "id": 1, "email": "...", "access": "...", "refresh": "..." }
 
     Response 401:
         { "detail": "Invalid credentials." }
-
-    Authentication on subsequent requests:
-        Add the header:
-            Authorization: Bearer <access token>
     """
 
+    # authentication_classes = [] is critical here.
+    # DRF runs authentication BEFORE checking permissions, so even with
+    # permission_classes = [AllowAny], if JWTAuthentication sees a stale
+    # token in the Authorization header it raises "Token is invalid" and
+    # the view never runs. Setting authentication_classes = [] disables
+    # that check entirely for this public endpoint.
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request):
-        email = request.data.get("email", "").strip().lower()
+        email    = request.data.get("email", "").strip().lower()
         password = request.data.get("password", "")
 
         if not email or not password:
@@ -48,7 +43,6 @@ class SignInView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Django's authenticate() uses the USERNAME_FIELD (email) for lookup
         user = authenticate(request, username=email, password=password)
 
         if user is None:
@@ -67,9 +61,9 @@ class SignInView(APIView):
 
         return Response(
             {
-                "id": user.id,
-                "email": user.email,
-                "access": str(refresh.access_token),
+                "id":      user.id,
+                "email":   user.email,
+                "access":  str(refresh.access_token),
                 "refresh": str(refresh),
             },
             status=status.HTTP_200_OK,

@@ -13,20 +13,13 @@ from .serializers import SignupSerializer
 @method_decorator(ensure_csrf_cookie, name="dispatch")
 class SignupView(APIView):
     """
-    POST /api/users/signup/
-
-    Registers a new user and returns a JWT access + refresh token pair.
-
-    The @ensure_csrf_cookie decorator guarantees that the CSRF cookie is set
-    on the response so that JS clients can read it for subsequent requests.
-
-    Headers expected from the client on non-safe requests:
-        X-CSRFToken: <value from cookie>
+    POST /api/users/signup/ — Registers a new user, returns JWT tokens.
     """
 
+    # No authentication — public endpoint.
+    # Prevents JWTAuthentication from rejecting requests with stale tokens.
+    authentication_classes = []
     permission_classes = [AllowAny]
-    # CSRF enforcement is handled by Django's CsrfViewMiddleware globally.
-    # We keep it on (no csrf_exempt) so the endpoint is protected.
 
     def post(self, request):
         serializer = SignupSerializer(data=request.data)
