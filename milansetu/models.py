@@ -39,6 +39,13 @@ class ProfileDetails(models.Model):
     zodiac_sign = models.CharField(max_length=100, blank=True, null=True)
     manglik_status = models.CharField(max_length=50, blank=True, null=True)
     kundali_url = models.CharField(max_length=500, blank=True, null=True)
+    profile_photo = models.ForeignKey(
+        "UserGallery",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="profile_for",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -47,3 +54,118 @@ class ProfileDetails(models.Model):
 
     def __str__(self):
         return self.full_name or f"Profile #{self.pk}"
+
+
+class IdealPartner(models.Model):
+    """
+    One-to-one ideal partner preferences per user.
+    Basic fields are free; extended fields require premium membership.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="ideal_partner",
+    )
+    # Free-tier filters
+    age_min = models.IntegerField(blank=True, null=True)
+    age_max = models.IntegerField(blank=True, null=True)
+    height_min_cm = models.IntegerField(blank=True, null=True)
+    height_max_cm = models.IntegerField(blank=True, null=True)
+    religion = models.CharField(max_length=100, blank=True, null=True)
+    location = models.CharField(max_length=255, blank=True, null=True)
+    # Premium-tier filters
+    mother_tongue = models.CharField(max_length=100, blank=True, null=True)
+    marital_status = models.CharField(max_length=100, blank=True, null=True)
+    education = models.CharField(max_length=255, blank=True, null=True)
+    industry = models.CharField(max_length=255, blank=True, null=True)
+    min_income = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
+    max_income = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
+    income_unit = models.CharField(max_length=20, blank=True, null=True)
+    manglik_status = models.CharField(max_length=50, blank=True, null=True)
+    family_values = models.CharField(max_length=255, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "ideal_partner"
+
+    def __str__(self):
+        return f"Ideal partner prefs for {self.user_id}"
+
+
+class SentInterest(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        ACCEPTED = "accepted", "Accepted"
+        DECLINED = "declined", "Declined"
+        WITHDRAWN = "withdrawn", "Withdrawn"
+
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="sent_interests",
+    )
+    receiver_profile = models.ForeignKey(
+        ProfileDetails,
+        on_delete=models.CASCADE,
+        related_name="received_interests",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    message = models.TextField(blank=True, null=True)
+    response_message = models.TextField(blank=True, null=True)
+    match_score = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "sent_interests"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["sender", "receiver_profile"],
+                name="unique_interest_per_sender_receiver",
+            )
+        ]
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.sender_id} → profile {self.receiver_profile_id} ({self.status})"
+
+
+class UserGallery(models.Model):
+    class SensitivityStatus(models.TextChoices):
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+        PENDING = "pending", "Pending Review"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="gallery_images",
+    )
+    image_data = models.BinaryField()
+    content_type = models.CharField(max_length=100, default="image/jpeg")
+    original_filename = models.CharField(max_length=255, blank=True, default="")
+    file_size = models.PositiveIntegerField(default=0)
+    width = models.PositiveIntegerField(default=0)
+    height = models.PositiveIntegerField(default=0)
+    sensitivity_status = models.CharField(
+        max_length=20,
+        choices=SensitivityStatus.choices,
+        default=SensitivityStatus.PENDING,
+    )
+    sensitivity_score = models.PositiveSmallIntegerField(default=0)
+    sensitivity_message = models.CharField(max_length=500, blank=True, default="")
+    is_profile_photo = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "user_gallery"
+        ordering = ["-is_profile_photo", "-created_at"]
+
+    def __str__(self):
+        return f"Gallery #{self.pk} for user {self.user_id}"

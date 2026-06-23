@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from rest_framework import serializers
 
-from milansetu.models import ProfileDetails
+from milansetu.models import IdealPartner, ProfileDetails
 
 User = get_user_model()
 
@@ -83,7 +83,7 @@ class SignupSerializer(serializers.Serializer):
                 password=user_data["password"],
                 phone=user_data.get("phone"),
             )
-            # Always create a profile record linked to the user
             ProfileDetails.objects.create(user=user, **profile_data)
+            IdealPartner.objects.create(user=user)
 
         return user

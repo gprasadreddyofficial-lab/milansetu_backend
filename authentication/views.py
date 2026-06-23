@@ -63,6 +63,9 @@ class SignInView(APIView):
             {
                 "id":      user.id,
                 "email":   user.email,
+                "user_type":    user.user_type,
+                "is_premium":   user.is_premium,
+                "is_staff":     user.is_staff,
                 "access":  str(refresh.access_token),
                 "refresh": str(refresh),
             },
