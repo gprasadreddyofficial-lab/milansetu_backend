@@ -169,3 +169,57 @@ class UserGallery(models.Model):
 
     def __str__(self):
         return f"Gallery #{self.pk} for user {self.user_id}"
+
+
+class UserInvite(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        ACCEPTED = "accepted", "Accepted"
+        DECLINED = "declined", "Declined"
+
+    requester = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="sent_invites",
+    )
+    target = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="received_invites",
+    )
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    message = models.TextField(blank=True, null=True)
+    response_message = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "user_invites"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["requester", "target"], name="unique_invite_per_requester_target"
+            )
+        ]
+
+    def __str__(self):
+        return f"Invite {self.requester_id} → {self.target_id} ({self.status})"
+
+
+class FCMToken(models.Model):
+    """
+    Stores the Firebase Cloud Messaging registration token for a user's browser.
+    One token per user (updated on each login).
+    """
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="fcm_token",
+    )
+    token = models.TextField()
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "fcm_tokens"
+
+    def __str__(self):
+        return f"FCM token for user {self.user_id}"

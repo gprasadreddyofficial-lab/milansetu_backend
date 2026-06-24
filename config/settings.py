@@ -97,34 +97,21 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 # ─── Database (PostgreSQL) ───────────────────────────────────────────────────
 
-def _build_database_config() -> dict:
-    database_url = os.environ.get('DATABASE_URL', '').strip()
+# ─── Database (MySQL) ─────────────────────────────────────────────────────────
 
-    if database_url:
-        import dj_database_url
-        config = dj_database_url.parse(
-            database_url,
-            conn_max_age=600,
-            ssl_require=True,
-        )
-        return {'default': config}
-
-    return {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.environ.get('DB_NAME'),
-            'USER': os.environ.get('DB_USER'),
-            'PASSWORD': os.environ.get('DB_PASSWORD'),
-            'HOST': os.environ.get('DB_HOST'),
-            'PORT': os.environ.get('DB_PORT', '5432'),
-            'OPTIONS': {
-                'sslmode': 'require',
-            },
-        }
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': os.environ.get('DB_NAME', 'milansetu'),
+        'USER': os.environ.get('DB_USER', 'root'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'root'),
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', '3306'),
+        'OPTIONS': {
+            'charset': 'utf8mb4',
+        },
     }
-
-
-DATABASES = _build_database_config()
+}
 
 
 # ─── Password validation ──────────────────────────────────────────────────────
