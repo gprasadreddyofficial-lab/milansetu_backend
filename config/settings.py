@@ -14,7 +14,7 @@ load_dotenv(BASE_DIR / '.env')
 
 
 def _parse_allowed_hosts(raw: str) -> list[str]:
-    """Strip schemes/ports so ALLOWED_HOSTS contains hostnames only."""
+    """Strip schemes, ports, and paths so ALLOWED_HOSTS contains hostnames only."""
     hosts: list[str] = []
     for entry in raw.split(','):
         value = entry.strip()
@@ -22,6 +22,8 @@ def _parse_allowed_hosts(raw: str) -> list[str]:
             continue
         if '://' in value:
             value = urlparse(value).hostname or value
+        if '/' in value:
+            value = value.split('/', 1)[0]
         if ':' in value and not value.startswith('['):
             value = value.split(':', 1)[0]
         if value:
@@ -99,7 +101,97 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 def _build_database_config() -> dict:
     database_url = os.environ.get('DATABASE_URL', '').strip()
+    db_host = os.environ.get('DB_HOST', '').strip()
+    
+    # Check if we should use MySQL
+    is_mysql = False
+    if database_url.startswith('mysql://'):
+        is_mysql = True
+    elif db_host and ('mysql' in db_host or 'aivencloud.com' in db_host):
+        is_mysql = True
+    elif os.environ.get('DB_ENGINE') == 'mysql':
+        is_mysql = True
 
+    if is_mysql:
+        # Resolve connection variables
+        name = os.environ.get('DB_NAME', 'defaultdb')
+        user = os.environ.get('DB_USER')
+        password = os.environ.get('DB_PASSWORD')
+        host = db_host
+        port = os.environ.get('DB_PORT', '3306')
+
+        if database_url.startswith('mysql://'):
+            # Parse MySQL database URL
+            from urllib.parse import urlsplit
+            url = urlsplit(database_url)
+            name = url.path.lstrip('/')
+            netloc = url.netloc
+            if '@' in netloc:
+                auth, host_port = netloc.split('@', 1)
+                if ':' in auth:
+                    user, password = auth.split(':', 1)
+                else:
+                    user = auth
+            else:
+                host_port = netloc
+            
+            if ':' in host_port:
+                host, port = host_port.split(':', 1)
+            else:
+                host = host_port
+                port = '3306'
+
+        config = {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': name,
+            'USER': user,
+            'PASSWORD': password,
+            'HOST': host,
+            'PORT': port,
+        }
+
+        # Check for CA certificate options
+        ssl_ca = os.environ.get('DB_SSL_CA')
+        ssl_config = {}
+        if ssl_ca:
+            # If the certificate content itself is provided, write it to a local ca.pem file
+            if '-----BEGIN CERTIFICATE-----' in ssl_ca:
+                ca_path = os.path.join(BASE_DIR, 'ca.pem')
+                try:
+                    with open(ca_path, 'w') as f:
+                        f.write(ssl_ca.strip())
+                    ssl_config['ca'] = ca_path
+                except Exception:
+                    pass
+            else:
+                # If it's a file path, we can either use it relative to BASE_DIR or as absolute
+                if not os.path.isabs(ssl_ca):
+                    ssl_config['ca'] = os.path.join(BASE_DIR, ssl_ca)
+                else:
+                    ssl_config['ca'] = ssl_ca
+        else:
+            # Check if a ca.pem file exists in the base directory as fallback
+            ca_path = os.path.join(BASE_DIR, 'ca.pem')
+            if os.path.exists(ca_path):
+                ssl_config['ca'] = ca_path
+
+        # Determine if we should verify the SSL CA certificate
+        ssl_verify = os.environ.get('DB_SSL_VERIFY', 'True') == 'True'
+
+        if ssl_config:
+            if ssl_verify:
+                config['OPTIONS'] = {'ssl': ssl_config}
+            else:
+                import ssl as python_ssl
+                ctx = python_ssl.create_default_context(cafile=ssl_config.get('ca'))
+                ctx.check_hostname = False
+                ctx.verify_mode = python_ssl.CERT_NONE
+                config['OPTIONS'] = {'ssl': ctx}
+        else:
+            config['OPTIONS'] = {'ssl': {}}
+        return {'default': config}
+
+    # Otherwise, fall back to PostgreSQL (or SQLite/dj_database_url if provided)
     if database_url:
         import dj_database_url
         config = dj_database_url.parse(
@@ -158,22 +250,40 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'https://gprasadreddyofficial-lab.github.io',
-]
+def _parse_comma_separated_list(raw: str, default: list[str]) -> list[str]:
+    if not raw:
+        return default
+    # Replace newlines, tabs, and escape sequences to clean user input
+    cleaned = raw.replace('\\n', ',').replace('\n', ',').replace('\\r', '').replace('\r', '')
+    parsed = []
+    for entry in cleaned.split(','):
+        val = entry.strip().strip('"').strip("'")
+        if val:
+            parsed.append(val)
+    return parsed
+
+CORS_ALLOWED_ORIGINS = _parse_comma_separated_list(
+    os.environ.get('CORS_ALLOWED_ORIGINS', ''),
+    default=[
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'https://gprasadreddyofficial-lab.github.io',
+    ]
+)
 CORS_ALLOW_CREDENTIALS = True   # needed so the browser sends the CSRF cookie
 
 
 # ─── CSRF ─────────────────────────────────────────────────────────────────────
 
-CSRF_TRUSTED_ORIGINS = [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'https://gprasadreddyofficial-lab.github.io',
-    'https://milansetu-backend.onrender.com',
-]
+CSRF_TRUSTED_ORIGINS = _parse_comma_separated_list(
+    os.environ.get('CSRF_TRUSTED_ORIGINS', ''),
+    default=[
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'https://gprasadreddyofficial-lab.github.io',
+        'https://milansetu-backend.onrender.com',
+    ]
+)
 # Cookie is readable by JS so the frontend can attach it as a header
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = 'Lax'

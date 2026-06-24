@@ -1,0 +1,20 @@
+# Virtual environment
+venv/
+ENV/
+env/
+
+# Sensitive environment variables
+.env
+
+# Local database
+db.sqlite3
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# OS files
+.DS_Store
+Thumbs.db
