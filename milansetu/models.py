@@ -205,6 +205,39 @@ class UserInvite(models.Model):
         return f"Invite {self.requester_id} → {self.target_id} ({self.status})"
 
 
+class ProfileView(models.Model):
+    """
+    Records when a user views another user's profile.
+    viewer  → the user who clicked View Profile
+    viewed  → the profile that was viewed
+    """
+    viewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='profile_views_made',
+    )
+    viewed_profile = models.ForeignKey(
+        'ProfileDetails',
+        on_delete=models.CASCADE,
+        related_name='profile_views_received',
+    )
+    viewed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'profile_views'
+        ordering = ['-viewed_at']
+        # One record per viewer+profile pair — update timestamp instead of duplicating
+        constraints = [
+            models.UniqueConstraint(
+                fields=['viewer', 'viewed_profile'],
+                name='unique_profile_view',
+            )
+        ]
+
+    def __str__(self):
+        return f"User {self.viewer_id} viewed profile {self.viewed_profile_id}"
+
+
 class FCMToken(models.Model):
     """
     Stores the Firebase Cloud Messaging registration token for a user's browser.

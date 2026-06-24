@@ -16,7 +16,7 @@ from .matching import (
     calculate_compatibility,
     filter_profiles_for_user,
 )
-from .models import IdealPartner, ProfileDetails, SentInterest, FCMToken
+from .models import IdealPartner, ProfileDetails, SentInterest, FCMToken, ProfileView
 from .premium import (
     can_edit_profile,
     check_premium_ideal_partner_fields,
@@ -306,6 +306,71 @@ class ProfileDetailsDetailView(APIView):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         profile.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ─── Profile View Tracking ────────────────────────────────────────────────────
+
+class ProfileViewRecordView(APIView):
+    """
+    POST /api/milansetu/profiles/<pk>/view/
+    Records that the logged-in user viewed this profile.
+    Uses update_or_create so repeated views just refresh the timestamp.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            viewed_profile = ProfileDetails.objects.get(pk=pk)
+        except ProfileDetails.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Don't record self-views
+        if viewed_profile.user_id == request.user.id:
+            return Response({"detail": "Self-view ignored."}, status=status.HTTP_200_OK)
+
+        # Use raw update to refresh viewed_at since auto_now_add won't update
+        from django.utils import timezone
+        obj, created = ProfileView.objects.get_or_create(
+            viewer=request.user,
+            viewed_profile=viewed_profile,
+        )
+        if not created:
+            # Refresh the timestamp manually
+            ProfileView.objects.filter(pk=obj.pk).update(viewed_at=timezone.now())
+
+        return Response({"recorded": True}, status=status.HTTP_200_OK)
+
+
+class MyRecentViewsView(APIView):
+    """
+    GET /api/milansetu/profiles/views/
+    Returns the profiles that the logged-in user recently viewed (most recent first).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        views = (
+            ProfileView.objects.filter(viewer=request.user)
+            .select_related("viewed_profile")
+            .order_by("-viewed_at")[:20]
+        )
+        data = []
+        for v in views:
+            p = v.viewed_profile
+            data.append({
+                "viewed_profile_id": p.id,
+                "full_name": p.full_name or "Member",
+                "age": p.age,
+                "current_designation": p.current_designation,
+                "education": p.education,
+                "birth_place": p.birth_place,
+                "profile_photo_url": (
+                    f"/api/milansetu/gallery/{p.profile_photo_id}/image/"
+                    if p.profile_photo_id else None
+                ),
+                "viewed_at": v.viewed_at,
+            })
+        return Response(data)
 
 
 # ─── Sent Interests ───────────────────────────────────────────────────────────
