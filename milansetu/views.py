@@ -16,7 +16,7 @@ from .matching import (
     calculate_compatibility,
     filter_profiles_for_user,
 )
-from .models import IdealPartner, ProfileDetails, SentInterest
+from .models import IdealPartner, ProfileDetails, SentInterest, FCMToken, ProfileView
 from .premium import (
     can_edit_profile,
     check_premium_ideal_partner_fields,
@@ -308,6 +308,71 @@ class ProfileDetailsDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+# ─── Profile View Tracking ────────────────────────────────────────────────────
+
+class ProfileViewRecordView(APIView):
+    """
+    POST /api/milansetu/profiles/<pk>/view/
+    Records that the logged-in user viewed this profile.
+    Uses update_or_create so repeated views just refresh the timestamp.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            viewed_profile = ProfileDetails.objects.get(pk=pk)
+        except ProfileDetails.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Don't record self-views
+        if viewed_profile.user_id == request.user.id:
+            return Response({"detail": "Self-view ignored."}, status=status.HTTP_200_OK)
+
+        # Use raw update to refresh viewed_at since auto_now_add won't update
+        from django.utils import timezone
+        obj, created = ProfileView.objects.get_or_create(
+            viewer=request.user,
+            viewed_profile=viewed_profile,
+        )
+        if not created:
+            # Refresh the timestamp manually
+            ProfileView.objects.filter(pk=obj.pk).update(viewed_at=timezone.now())
+
+        return Response({"recorded": True}, status=status.HTTP_200_OK)
+
+
+class MyRecentViewsView(APIView):
+    """
+    GET /api/milansetu/profiles/views/
+    Returns the profiles that the logged-in user recently viewed (most recent first).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        views = (
+            ProfileView.objects.filter(viewer=request.user)
+            .select_related("viewed_profile")
+            .order_by("-viewed_at")[:20]
+        )
+        data = []
+        for v in views:
+            p = v.viewed_profile
+            data.append({
+                "viewed_profile_id": p.id,
+                "full_name": p.full_name or "Member",
+                "age": p.age,
+                "current_designation": p.current_designation,
+                "education": p.education,
+                "birth_place": p.birth_place,
+                "profile_photo_url": (
+                    f"/api/milansetu/gallery/{p.profile_photo_id}/image/"
+                    if p.profile_photo_id else None
+                ),
+                "viewed_at": v.viewed_at,
+            })
+        return Response(data)
+
+
 # ─── Sent Interests ───────────────────────────────────────────────────────────
 
 class SentInterestListView(APIView):
@@ -350,6 +415,14 @@ class SentInterestListView(APIView):
             message=serializer.validated_data.get("message", ""),
             match_score=score,
         )
+
+        # Send FCM push notification to the receiver
+        try:
+            from .fcm_service import send_interest_notification
+            send_interest_notification(sender=request.user, receiver=receiver_profile.user)
+        except Exception:
+            pass  # Never block interest creation on notification failure
+
         return Response(
             SentInterestSerializer(interest).data,
             status=status.HTTP_201_CREATED,
@@ -413,3 +486,142 @@ class SentInterestStatsView(APIView):
                 "response_rate": response_rate,
             }
         )
+
+
+# ─── Received Interests ──────────────────────────────────────────────────────────
+
+class ReceivedInterestListView(APIView):
+    """
+    GET /api/milansetu/interests/received/
+    Returns interests where the current user is the receiver.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            my_profile = ProfileDetails.objects.get(user=request.user)
+        except ProfileDetails.DoesNotExist:
+            return Response([], status=status.HTTP_200_OK)
+
+        interests = (
+            SentInterest.objects.filter(receiver_profile=my_profile)
+            .select_related("sender", "sender__profile")
+            .order_by("-created_at")
+        )
+        data = []
+        for interest in interests:
+            sender_profile = getattr(interest.sender, 'profile', None)
+            data.append({
+                "id": interest.id,
+                "sender_id": interest.sender_id,
+                "sender_name": sender_profile.full_name if sender_profile else interest.sender.email,
+                "sender_profile": ProfileDetailsSerializer(sender_profile).data if sender_profile else None,
+                "status": interest.status,
+                "message": interest.message,
+                "match_score": interest.match_score,
+                "created_at": interest.created_at,
+            })
+        return Response(data)
+
+    def patch(self, request):
+        """Accept or decline a received interest."""
+        interest_id = request.data.get("interest_id")
+        action = request.data.get("action")  # 'accept' | 'decline'
+        if not interest_id or action not in ("accept", "decline"):
+            return Response({"detail": "Provide interest_id and action (accept/decline)."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            my_profile = ProfileDetails.objects.get(user=request.user)
+            interest = SentInterest.objects.get(pk=interest_id, receiver_profile=my_profile)
+        except (ProfileDetails.DoesNotExist, SentInterest.DoesNotExist):
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if interest.status != SentInterest.Status.PENDING:
+            return Response({"detail": "Interest is no longer pending."}, status=status.HTTP_400_BAD_REQUEST)
+
+        interest.status = (
+            SentInterest.Status.ACCEPTED if action == "accept"
+            else SentInterest.Status.DECLINED
+        )
+        interest.save(update_fields=["status", "updated_at"])
+        return Response(SentInterestSerializer(interest).data)
+
+
+class AcceptedInterestsView(APIView):
+    """
+    GET /api/milansetu/interests/accepted/
+    Returns all accepted interests (sent or received) — used to populate the chat contact list.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        # Interests this user sent that were accepted
+        sent_accepted = (
+            SentInterest.objects.filter(sender=user, status=SentInterest.Status.ACCEPTED)
+            .select_related("receiver_profile", "receiver_profile__user")
+        )
+
+        # Interests this user received that they accepted
+        try:
+            my_profile = ProfileDetails.objects.get(user=user)
+            received_accepted = (
+                SentInterest.objects.filter(
+                    receiver_profile=my_profile,
+                    status=SentInterest.Status.ACCEPTED
+                ).select_related("sender", "sender__profile")
+            )
+        except ProfileDetails.DoesNotExist:
+            received_accepted = SentInterest.objects.none()
+
+        contacts = []
+
+        for interest in sent_accepted:
+            other_profile = interest.receiver_profile
+            other_user = other_profile.user
+            contacts.append({
+                "interest_id": interest.id,
+                "direction": "sent",
+                "other_user_id": other_user.id,
+                "other_user_email": other_user.email,
+                "profile": ProfileDetailsSerializer(other_profile).data,
+                "match_score": interest.match_score,
+                "connected_at": interest.updated_at,
+            })
+
+        for interest in received_accepted:
+            sender = interest.sender
+            sender_profile = getattr(sender, 'profile', None)
+            contacts.append({
+                "interest_id": interest.id,
+                "direction": "received",
+                "other_user_id": sender.id,
+                "other_user_email": sender.email,
+                "profile": ProfileDetailsSerializer(sender_profile).data if sender_profile else None,
+                "match_score": interest.match_score,
+                "connected_at": interest.updated_at,
+            })
+
+        return Response(contacts)
+
+
+# ─── FCM Token ───────────────────────────────────────────────────────────────────
+
+class FCMTokenView(APIView):
+    """
+    POST /api/milansetu/fcm/token/
+    Store or update the FCM registration token for the authenticated user.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        token = request.data.get("token", "").strip()
+        if not token:
+            return Response({"detail": "token is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        FCMToken.objects.update_or_create(
+            user=request.user,
+            defaults={"token": token},
+        )
+        return Response({"detail": "Token saved."}, status=status.HTTP_200_OK)
