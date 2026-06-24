@@ -4,6 +4,7 @@ Django settings for config project.
 
 from pathlib import Path
 import os
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 from datetime import timedelta
 
@@ -12,11 +13,27 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
 
+def _parse_allowed_hosts(raw: str) -> list[str]:
+    """Strip schemes/ports so ALLOWED_HOSTS contains hostnames only."""
+    hosts: list[str] = []
+    for entry in raw.split(','):
+        value = entry.strip()
+        if not value:
+            continue
+        if '://' in value:
+            value = urlparse(value).hostname or value
+        if ':' in value and not value.startswith('['):
+            value = value.split(':', 1)[0]
+        if value:
+            hosts.append(value)
+    return hosts
+
+
 # ─── Security ────────────────────────────────────────────────────────────────
 
 SECRET_KEY = os.environ.get('SECRET_KEY')
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
-ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', '').split(',') if h.strip()]
+ALLOWED_HOSTS = _parse_allowed_hosts(os.environ.get('ALLOWED_HOSTS', ''))
 
 # ─── Custom user model ────────────────────────────────────────────────────────
 AUTH_USER_MODEL = 'users.User'
@@ -78,21 +95,36 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 
 
-# ─── Database (MySQL) ─────────────────────────────────────────────────────────
+# ─── Database (PostgreSQL) ───────────────────────────────────────────────────
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.environ.get('DB_NAME', 'milansetu'),
-        'USER': os.environ.get('DB_USER', 'root'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', ''),
-        'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
-        'PORT': os.environ.get('DB_PORT', '3306'),
-        'OPTIONS': {
-            'charset': 'utf8mb4',
-        },
+def _build_database_config() -> dict:
+    database_url = os.environ.get('DATABASE_URL', '').strip()
+
+    if database_url:
+        import dj_database_url
+        config = dj_database_url.parse(
+            database_url,
+            conn_max_age=600,
+            ssl_require=True,
+        )
+        return {'default': config}
+
+    return {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.environ.get('DB_NAME'),
+            'USER': os.environ.get('DB_USER'),
+            'PASSWORD': os.environ.get('DB_PASSWORD'),
+            'HOST': os.environ.get('DB_HOST'),
+            'PORT': os.environ.get('DB_PORT', '5432'),
+            'OPTIONS': {
+                'sslmode': 'require',
+            },
+        }
     }
-}
+
+
+DATABASES = _build_database_config()
 
 
 # ─── Password validation ──────────────────────────────────────────────────────
@@ -156,9 +188,6 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
-    # Return 401 responses instead of raising exceptions for invalid tokens
-    # on endpoints that use IsAuthenticated — never throw on public endpoints
-    # since those now have authentication_classes = []
     'UNAUTHENTICATED_USER': None,
 }
 
@@ -171,7 +200,5 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
-    # Use a dedicated signing key so JWT verification never depends on
-    # how python-dotenv parses special characters in SECRET_KEY
     'SIGNING_KEY': os.environ.get('JWT_SIGNING_KEY', os.environ.get('SECRET_KEY')),
 }
