@@ -32,10 +32,22 @@ def _get_firebase_app():
     if _firebase_app is not None:
         return _firebase_app
 
-    if not os.path.exists(SERVICE_ACCOUNT_PATH):
+    service_account_info = None
+    env_creds = os.environ.get('FIREBASE_SERVICE_ACCOUNT', '').strip()
+    if env_creds:
+        try:
+            import json
+            service_account_info = json.loads(env_creds)
+        except Exception as e:
+            logger.error("[FCM] Failed to parse FIREBASE_SERVICE_ACCOUNT environment variable: %s", e)
+
+    if not service_account_info and os.path.exists(SERVICE_ACCOUNT_PATH):
+        service_account_info = SERVICE_ACCOUNT_PATH
+
+    if not service_account_info:
         logger.warning(
-            "[FCM] serviceAccountKey.json not found at %s. "
-            "Push notifications will be disabled until you add it.",
+            "[FCM] serviceAccountKey.json not found at %s and FIREBASE_SERVICE_ACCOUNT env var is empty. "
+            "Push notifications will be disabled.",
             SERVICE_ACCOUNT_PATH
         )
         return None
@@ -45,10 +57,11 @@ def _get_firebase_app():
         from firebase_admin import credentials
 
         if not firebase_admin._apps:
-            cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
+            cred = credentials.Certificate(service_account_info)
             _firebase_app = firebase_admin.initialize_app(cred)
         else:
             _firebase_app = firebase_admin.get_app()
+
         return _firebase_app
     except ImportError:
         logger.warning(
@@ -59,6 +72,7 @@ def _get_firebase_app():
     except Exception as exc:
         logger.error("[FCM] Failed to init Firebase Admin SDK: %s", exc)
         return None
+
 
 
 def send_push(to_user, title: str, body: str, data: dict = None) -> bool:
