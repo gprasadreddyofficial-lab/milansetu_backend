@@ -42,7 +42,7 @@ def _get_firebase_app():
 
     try:
         import firebase_admin
-        from firebase_admin import credentials "
+        from firebase_admin import credentials
 
         if not firebase_admin._apps:
             cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
@@ -133,7 +133,7 @@ def send_interest_notification(sender, receiver):
         to_user=receiver,
         title="New Interest Request!",
         body=f"{sender_name} is interested in your profile. Check it out!",
-        data={"type": "interest", "sender_id": str(sender.id), "url": "/#received"},
+        data={"type": "interest", "sender_id": str(sender.id), "url": "/milansetu/#notifications"},
     )
 
 
@@ -149,5 +149,25 @@ def send_message_notification(sender, receiver, preview: str = ""):
         to_user=receiver,
         title="New Message on MilanSetu",
         body=body,
-        data={"type": "message", "sender_id": str(sender.id), "url": "/#messages"},
+        data={"type": "message", "sender_id": str(sender.id), "url": "/milansetu/#messages"},
     )
+
+
+def send_interest_accepted_notification(sender, receiver):
+    """
+    Notify receiver (original sender of the interest) that sender (original receiver)
+    accepted their interest request.
+    """
+    sender_name = getattr(sender, 'profile', None)
+    if sender_name:
+        sender_name = sender_name.full_name or sender.email
+    else:
+        sender_name = sender.email
+
+    return send_push(
+        to_user=receiver,
+        title="Interest Accepted!",
+        body=f"{sender_name} accepted your interest request! You can now start chatting.",
+        data={"type": "interest_accepted", "sender_id": str(sender.id), "url": "/milansetu/#messages"},
+    )
+

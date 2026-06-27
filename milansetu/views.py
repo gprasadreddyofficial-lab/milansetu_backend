@@ -544,7 +544,17 @@ class ReceivedInterestListView(APIView):
             else SentInterest.Status.DECLINED
         )
         interest.save(update_fields=["status", "updated_at"])
+
+        # Send push notification on acceptance
+        if interest.status == SentInterest.Status.ACCEPTED:
+            try:
+                from .fcm_service import send_interest_accepted_notification
+                send_interest_accepted_notification(sender=request.user, receiver=interest.sender)
+            except Exception:
+                pass
+
         return Response(SentInterestSerializer(interest).data)
+
 
 
 class AcceptedInterestsView(APIView):

@@ -216,6 +216,10 @@ def _build_database_config() -> dict:
     }
 
 
+DATABASES = _build_database_config()
+
+
+
 # ─── Password validation ──────────────────────────────────────────────────────
 
 AUTH_PASSWORD_VALIDATORS = [
